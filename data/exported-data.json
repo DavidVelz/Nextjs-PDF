@@ -1,0 +1,138 @@
+{
+  "generatedAt": "2025-12-14T00:00:00.000Z",
+  "title": "Cálculo ISO 12354-4 (ejemplo)",
+  "body": "Este JSON contiene los parámetros, resultados y datos de medición que has ido proporcionando.",
+  "parameters": {
+    "massPerArea_kg_per_m2": 15,
+    "area_m2": 10,
+    "sourceLevel_dB": 80
+  },
+  "frequencies_used_Hz": [50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000],
+  "perBand_TL_dB_octave": {
+    "octaveBands_Hz": [63, 125, 250, 500, 1000, 2000, 4000, 8000],
+    "perBand_TL_dB": [12.3, 18.3, 24.3, 30.3, 36.3, 42.4, 48.4, 54.4],
+    "overall_TL_dB": 36.1
+  },
+  "perBand_Lp_exterior_dB": [
+    { "freq_Hz": 50, "Lp_dB": 66.5 },
+    { "freq_Hz": 63, "Lp_dB": 68.3 },
+    { "freq_Hz": 80, "Lp_dB": 74.9 },
+    { "freq_Hz": 100, "Lp_dB": 73.1 },
+    { "freq_Hz": 125, "Lp_dB": 77.6 },
+    { "freq_Hz": 160, "Lp_dB": 77.6 },
+    { "freq_Hz": 200, "Lp_dB": 76.7 },
+    { "freq_Hz": 250, "Lp_dB": 76.6 },
+    { "freq_Hz": 315, "Lp_dB": 77.1 },
+    { "freq_Hz": 400, "Lp_dB": 78.9 },
+    { "freq_Hz": 500, "Lp_dB": 74.8 },
+    { "freq_Hz": 630, "Lp_dB": 71.1 },
+    { "freq_Hz": 800, "Lp_dB": 70.2 },
+    { "freq_Hz": 1000, "Lp_dB": 66.9 },
+    { "freq_Hz": 1250, "Lp_dB": 66.5 },
+    { "freq_Hz": 1600, "Lp_dB": 66.9 },
+    { "freq_Hz": 2000, "Lp_dB": 67.6 },
+    { "freq_Hz": 2500, "Lp_dB": 65.7 },
+    { "freq_Hz": 3150, "Lp_dB": 62.0 },
+    { "freq_Hz": 4000, "Lp_dB": 60.0 },
+    { "freq_Hz": 5000, "Lp_dB": 57.3 }
+  ],
+  "perBand_Lw_dB": [
+    { "freq_Hz": 50, "Lw_dB": 86.2 },
+    { "freq_Hz": 63, "Lw_dB": 88.0 },
+    { "freq_Hz": 80, "Lw_dB": 94.7 },
+    { "freq_Hz": 100, "Lw_dB": 92.8 },
+    { "freq_Hz": 125, "Lw_dB": 97.3 },
+    { "freq_Hz": 160, "Lw_dB": 97.4 },
+    { "freq_Hz": 200, "Lw_dB": 96.5 },
+    { "freq_Hz": 250, "Lw_dB": 96.4 },
+    { "freq_Hz": 315, "Lw_dB": 96.8 },
+    { "freq_Hz": 400, "Lw_dB": 98.6 },
+    { "freq_Hz": 500, "Lw_dB": 94.6 },
+    { "freq_Hz": 630, "Lw_dB": 90.8 },
+    { "freq_Hz": 800, "Lw_dB": 89.9 },
+    { "freq_Hz": 1000, "Lw_dB": 86.6 },
+    { "freq_Hz": 1250, "Lw_dB": 86.2 },
+    { "freq_Hz": 1600, "Lw_dB": 86.6 },
+    { "freq_Hz": 2000, "Lw_dB": 87.4 },
+    { "freq_Hz": 2500, "Lw_dB": 85.4 },
+    { "freq_Hz": 3150, "Lw_dB": 81.7 },
+    { "freq_Hz": 4000, "Lw_dB": 79.7 },
+    { "freq_Hz": 5000, "Lw_dB": 77.0 }
+  ],
+  "facade_impacts_dB": [
+    { "name": "Pared 1", "impact_dB": 89.7 },
+    { "name": "Pared 2", "impact_dB": 88.7 },
+    { "name": "Pared 3", "impact_dB": 89.7 },
+    { "name": "Pared 4", "impact_dB": 105.4 }
+  ],
+  "summary": {
+    "LpA_db": 86.8,
+    "weighted_isolation_db": 19.7,
+    "note": "Indicador estimado del nivel de presión sonora global y aislamiento ponderado."
+  },
+  "elements": [
+    {
+      "name": "Fachada",
+      "lw": 80.2,
+      "lp": 0.0,
+      "children": [
+        {
+          "name": "Pared 1",
+          "lw": 89.7,
+          "lp": 69.6
+        }
+      ]
+    }
+  ],
+  "diagnostic": {
+    "message": "Diagnóstico de Emisión",
+    "exteriorLevel_dBA": 87,
+    "exceeds_by_dB": 27,
+    "interiorLevel_Lp_in_dBA": 104.57142857142857,
+    "exteriorLimit_dB": 60
+  },
+  "criticalPoints": [
+    {
+      "type": "Abertura",
+      "location": "Fachada",
+      "material": "Ventana corredera vidrio 4mm",
+      "Rw_dB": 15,
+      "note": "Crítico: Vidrio simple. Reemplazar urgente por doble acristalamiento."
+    },
+    {
+      "type": "Abertura",
+      "location": "Fachada",
+      "material": "Puerta entamborada sencilla",
+      "Rw_dB": 21,
+      "note": "Crítico: Puerta ligera. Instalar puerta maciza o acústica."
+    }
+  ],
+  "improvementStrategy": [
+    {
+      "priority": 1,
+      "title": "Prioridad: Aberturas",
+      "description": "Las ventanas y puertas suelen ser los puntos más débiles. Si tiene ventanas con Rw < 30 dB, reemplazarlas es la medida más efectiva."
+    },
+    {
+      "priority": 2,
+      "title": "Intervención Estructural",
+      "description": "El déficit de aislamiento es alto (19 dB). Es probable que necesite mejorar la masa de los muros (trasdosados) y asegurar la estanqueidad total del recinto."
+    }
+  ],
+  "diagnosticGlobal": {
+    "LpA_final_db": 87,
+    "Lw_emission_db": 107,
+    "delta_objective_db": 27,
+    "Lw_total_db": 106.5,
+    "area_openings_percent": 1.7
+  },
+  "interpretation": {
+    "LpA": {
+      "status": "Crítico",
+      "message": "Ruido elevado — se recomiendan medidas inmediatas (aislamiento y control de fuentes).",
+      "value_db": 87,
+      "definition": "LpA — Nivel de presión sonora ponderado A: mide el volumen percibido por el oído humano en el recinto (dB(A)). Se utiliza para valorar el confort acústico y el cumplimiento de límites de ruido."
+    }
+  },
+  "notes": "Los TL por banda se calculan con una aproximación basada en la ley de la masa. No sustituye la norma ISO 12354-4 oficial."
+}

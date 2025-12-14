@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Portada - Informe</title>
+  <style>
+    body { font-family: Inter, Arial, sans-serif; margin: 32px; color: #111; }
+    .cover { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px; }
+    .logo { width: 160px; height: auto; margin-bottom: 18px; }
+    .title { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
+    .subtitle { font-size: 14px; color: #555; margin-bottom: 18px; }
+    .meta { font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="cover">
+    <img class="logo" src="/insonor.webp" alt="Logo"/>
+    <div class="title">INFORME DE ANÁLISIS ACÚSTICO</div>
+    <div class="subtitle">{{study}} — {{establishment}}</div>
+    <div class="meta">Fecha: {{generatedAt}}</div>
+    <div style="height:18px"></div>
+  </div>
+</body>
+</html>

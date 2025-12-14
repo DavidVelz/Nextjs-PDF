@@ -1,4 +1,6 @@
 import Image from "next/image";
+// Importación estática del componente cliente (no usar dynamic con ssr:false aquí)
+import PdfGenerator from "./components/PdfGenerator.client";
 
 export default function Home() {
   return (
@@ -58,6 +60,13 @@ export default function Home() {
           >
             Documentation
           </a>
+        </div>
+        <div className="w-full mt-8">
+          <h2 className="mb-4 text-xl font-semibold text-black dark:text-zinc-50">
+            Generador de PDF (@react-pdf/renderer)
+          </h2>
+          {/* Componente cliente que genera y descarga/abre el PDF */}
+          <PdfGenerator />
         </div>
       </main>
     </div>
