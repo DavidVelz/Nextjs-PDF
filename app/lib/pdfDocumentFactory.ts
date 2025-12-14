@@ -19,8 +19,8 @@ function renderElement(node: ElementNode, level = 0): React.ReactElement {
 	const indent = level * 8;
 	const leftStyle = { marginLeft: indent };
 	const badges: React.ReactElement[] = [];
-	if (typeof node.lw === "number") badges.push(React.createElement(Text, { key: "lw", style: styles.badge }, `Lw: ${node.lw} dB`));
-	if (typeof node.lp === "number") badges.push(React.createElement(Text, { key: "lp", style: styles.badge }, `Lp: ${node.lp} dB`));
+	if (typeof node.lw === "number") badges.push(React.createElement(Text, { key: "lw", style: styles.badge }, React.createElement(Text, { style: styles.strong }, `Lw: ${node.lw} dB`)));
+	if (typeof node.lp === "number") badges.push(React.createElement(Text, { key: "lp", style: styles.badge }, React.createElement(Text, { style: styles.strong }, `Lp: ${node.lp} dB`)));
 	const children = (node.children || []).map((c, i) => React.createElement(View, { key: `child-${i}` }, renderElement(c, level + 1)));
 	return React.createElement(
 		View,
@@ -28,7 +28,7 @@ function renderElement(node: ElementNode, level = 0): React.ReactElement {
 		React.createElement(
 			View,
 			{ style: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" } },
-			React.createElement(View, { style: leftStyle }, React.createElement(Text, { style: { fontSize: 10 } }, node.name)),
+			React.createElement(View, { style: leftStyle }, React.createElement(Text, { style: styles.elementName }, node.name)),
 			React.createElement(View, null, ...badges)
 		),
 		...children
@@ -38,14 +38,24 @@ function renderElement(node: ElementNode, level = 0): React.ReactElement {
 /** Crea elemento watermark (logo) para insertar en cada página */
 function createWatermark(src?: string, opts?: { width?: number; top?: number; left?: number; opacity?: number }) {
 	if (!src) return null;
-	const width = opts?.width ?? 260;
-	const top = opts?.top ?? 280;
-	const left = opts?.left ?? 150; // approximate center for A4
-	const opacity = typeof opts?.opacity === "number" ? opts.opacity : 0.06;
-	// Use absolute positioning so watermark sits behind content
+	// if running in browser and src is relative, make absolute so the image can be fetched by react-pdf in the browser
+	let finalSrc = src;
+	if (typeof window !== "undefined" && typeof src === "string" && src.startsWith("/")) {
+		try {
+			finalSrc = window.location.origin + src;
+		} catch {
+			// fallback keep src as-is
+			finalSrc = src;
+		}
+	}
+	// smaller and subtler watermark by default
+	const width = opts?.width ?? 140; // reduced from 260
+	const top = opts?.top ?? 320;     // adjust vertical position
+	const left = opts?.left ?? 180;   // adjust horizontal to center
+	const opacity = typeof opts?.opacity === "number" ? opts?.opacity : 0.04; // more subtle
 	return React.createElement(PDFImage, {
 		key: "page-watermark",
-		src,
+		src: finalSrc,
 		style: {
 			position: "absolute",
 			top,
@@ -56,6 +66,32 @@ function createWatermark(src?: string, opts?: { width?: number; top?: number; le
 	});
 }
 
+// Nuevo: helper para crear footer fijo (logo pequeño + URL)
+function createFooter(logoSrc?: string, urlText?: string) {
+	if (!logoSrc && !urlText) return null;
+	let finalSrc = logoSrc ?? "/insonor.png";
+	if (typeof window !== "undefined" && typeof finalSrc === "string" && finalSrc.startsWith("/")) {
+		try {
+			finalSrc = window.location.origin + finalSrc;
+		} catch {
+			finalSrc = finalSrc;
+		}
+	}
+	const parts: React.ReactElement[] = [];
+	if (finalSrc) {
+		parts.push(React.createElement(PDFImage, { key: "footer-logo", src: finalSrc, style: styles.footerLogo }));
+	} else {
+		parts.push(React.createElement(View, { key: "footer-spacer", style: { width: 64 } }));
+	}
+	if (urlText) {
+		parts.push(React.createElement(Text, { key: "footer-text", style: styles.footerText }, urlText));
+	} else {
+		parts.push(React.createElement(Text, { key: "footer-text-empty", style: styles.footerText }, ""));
+	}
+	// container with fixed: true to render in bottom on every page
+	return React.createElement(View, { key: "footer", fixed: true, style: styles.footerContainer }, ...parts);
+}
+
 /** Create the PDF Document using data (templates strings inserted as plain text) */
 export function createPdfDocumentElement(data: ExportedData = {}): React.ReactElement {
 	const title = data.title ?? "Informe acústico";
@@ -64,8 +100,13 @@ export function createPdfDocumentElement(data: ExportedData = {}): React.ReactEl
 	const makeRunningHead = (t: string) => t.length > 40 ? t.slice(0, 37) + "..." : t;
 	const runningHead = makeRunningHead(title);
 
-	// prepare watermark once (uses public/insonor.webp)
-	const watermark = createWatermark("/insonor.webp", { width: 260, top: 280, left: 150, opacity: 0.06 });
+	// resolve logo source (prefer data URI)
+	const rawLogo = (data as any).logoDataUrl;
+	const logoSource = typeof rawLogo === "string" && rawLogo.startsWith("data:") ? rawLogo : "/insonor.png";
+
+	// create watermark and footer
+	const watermark = createWatermark(logoSource, { width: 100, top: 320, left: 180, opacity: 0.04 });
+	const footer = createFooter(logoSource, "app.insonor.co");
 
 	// header and page number (fixed) for APA
 	const headerLeft = React.createElement(Text, { key: "header-left", fixed: true, style: styles.runningHeadLeft }, makeRunningHead(data.title ?? "Informe acústico"));
@@ -84,13 +125,15 @@ export function createPdfDocumentElement(data: ExportedData = {}): React.ReactEl
 	if (watermark) coverChildren.push(watermark);
 	coverChildren.push(
 		React.createElement(View, { style: { alignItems: "center", marginTop: 40, marginBottom: 18 } },
-			React.createElement(PDFImage, { src: "/insonor.webp", style: { width: 220, height: "auto" } })
+			React.createElement(PDFImage, { src: "/insonor.png", style: { width: 140, height: "auto", opacity: 0.95 } })
 		)
 	);
 	coverChildren.push(React.createElement(Text, { style: styles.coverTitle }, data.title ?? "Informe acústico"));
 	coverChildren.push(React.createElement(Text, { style: styles.coverSub }, `Estudio: ISO 12354-4`));
 	coverChildren.push(React.createElement(Text, { style: styles.smallMeta }, `Fecha: ${new Date(data.generatedAt ?? new Date().toISOString()).toLocaleDateString()}`));
 	if (data.templates && data.templates.cover) coverChildren.push(React.createElement(Text, { style: { marginTop: 12 } }, HtmlUtils.stripHtml(data.templates.cover)));
+	// añadir footer al final de la portada
+	if (footer) coverChildren.push(footer);
 	const coverPage = React.createElement(Page, { size: "A4", style: styles.page, key: "cover" }, ...coverChildren);
 
 	// --- Results page ---
@@ -98,13 +141,16 @@ export function createPdfDocumentElement(data: ExportedData = {}): React.ReactEl
 	resultsChildren.push(headerLeft, pageNumber);
 	if (watermark) resultsChildren.push(watermark);
 	resultsChildren.push(React.createElement(Text, { style: styles.sectionTitle }, "Resultados generales"));
+	// Results page: use importantValue for key metrics
 	if (data.summary && (data.summary.LpA_db !== undefined)) {
-		resultsChildren.push(React.createElement(Text, null, `LpA: ${data.summary.LpA_db} dB`));
+		resultsChildren.push(React.createElement(Text, { style: styles.importantValue }, `LpA: ${data.summary.LpA_db} dB`));
 	}
 	if (data.diagnostic && data.diagnostic.Lw_emission_db !== undefined) {
-		resultsChildren.push(React.createElement(Text, null, `Lw (emisión): ${data.diagnostic.Lw_emission_db} dB`));
+		resultsChildren.push(React.createElement(Text, { style: styles.importantValue }, `Lw (emisión): ${data.diagnostic.Lw_emission_db} dB`));
 	}
 	if (data.templates && data.templates.results) resultsChildren.push(React.createElement(Text, { style: styles.smallMeta }, HtmlUtils.stripHtml(data.templates.results)));
+	// añadir footer
+	if (footer) resultsChildren.push(footer);
 	const resultsPage = React.createElement(Page, { size: "A4", style: styles.page, key: "results" }, ...resultsChildren);
 
 	// --- Bands page ---
@@ -121,19 +167,21 @@ export function createPdfDocumentElement(data: ExportedData = {}): React.ReactEl
 		// structured table of octave bands
 		if (tlLabels && tlLabels.length) {
 			bandsChildren.push(React.createElement(View, { style: styles.tableHeader },
-				React.createElement(Text, { style: { width: 120 } }, "Frecuencia (Hz)"),
-				React.createElement(Text, { style: { width: 120, textAlign: "right" } }, "TL (dB)")
+				React.createElement(Text, { style: { width: 120, ...styles.labelBold } }, "Frecuencia (Hz)"),
+				React.createElement(Text, { style: { width: 120, textAlign: "right", ...styles.labelBold } }, "TL (dB)")
 			));
 			tlLabels.forEach((f: number, i: number) => {
 				bandsChildren.push(React.createElement(View, { style: styles.tableRow, key: `band-row-${i}` },
-					React.createElement(Text, { style: styles.tableCell }, `${f} Hz`),
-					React.createElement(Text, { style: { ...styles.tableCell, textAlign: "right" } }, `${chartValues[i] ?? "-"} dB`)
+					React.createElement(Text, { style: { ...styles.tableCell } }, `${f} Hz`),
+					React.createElement(Text, { style: { ...styles.tableCell, textAlign: "right", fontWeight: 700 } }, `${chartValues[i] ?? "-"} dB`)
 				));
 			});
 		}
 	} else if (data.templates && data.templates.bands) {
 		bandsChildren.push(React.createElement(Text, null, HtmlUtils.stripHtml(data.templates.bands)));
 	}
+	// añadir footer
+	if (footer) bandsChildren.push(footer);
 	const bandsPage = React.createElement(Page, { size: "A4", style: styles.page, key: "bands" }, ...bandsChildren);
 
 	// --- Materials page ---
@@ -144,13 +192,19 @@ export function createPdfDocumentElement(data: ExportedData = {}): React.ReactEl
 	if (data.elements && data.elements.length) {
 		// list element names
 		data.elements.forEach((el, i) => {
-			materialsChildren.push(React.createElement(Text, { key: `mat-${i}` }, `• ${el.name}${el.material ? ` — ${el.material}` : ""}`));
+			const materialText = el.material ? ` — ${el.material}` : "";
+			materialsChildren.push(React.createElement(View, { key: `mat-${i}`, style: { flexDirection: "row", justifyContent: "flex-start" } },
+				React.createElement(Text, { style: styles.elementName }, `• ${el.name}`),
+				React.createElement(Text, { style: { marginLeft: 6 } }, materialText)
+			));
 		});
 	} else if (data.templates && data.templates.materials) {
 		materialsChildren.push(React.createElement(Text, null, HtmlUtils.stripHtml(data.templates.materials)));
 	} else {
 		materialsChildren.push(React.createElement(Text, null, "No hay materiales registrados."));
 	}
+	// añadir footer
+	if (footer) materialsChildren.push(footer);
 	const materialsPage = React.createElement(Page, { size: "A4", style: styles.page, key: "materials" }, ...materialsChildren);
 
 	// --- Recommendations page ---
@@ -167,6 +221,8 @@ export function createPdfDocumentElement(data: ExportedData = {}): React.ReactEl
 	} else {
 		recChildren.push(React.createElement(Text, null, "No hay recomendaciones registradas."));
 	}
+	// añadir footer
+	if (footer) recChildren.push(footer);
 	const recPage = React.createElement(Page, { size: "A4", style: styles.page, key: "recommendations" }, ...recChildren);
 
 	// --- Elements (construction tree) page ---
@@ -179,6 +235,8 @@ export function createPdfDocumentElement(data: ExportedData = {}): React.ReactEl
 	} else {
 		elementsChildren.push(React.createElement(Text, null, "No hay elementos."));
 	}
+	// añadir footer
+	if (footer) elementsChildren.push(footer);
 	const elementsPage = React.createElement(Page, { size: "A4", style: styles.page, key: "elements" }, ...elementsChildren);
 
 	// --- Diagnostic / Notes page (optional) ---
@@ -194,6 +252,8 @@ export function createPdfDocumentElement(data: ExportedData = {}): React.ReactEl
 		data.criticalPoints.forEach((c, i) => diagChildren.push(React.createElement(Text, { key: `crit-${i}` }, `${c.type ?? c.name} — ${c.note ?? ""}`)));
 	}
 	if (data.notes) diagChildren.push(React.createElement(Text, { style: styles.note }, `Notas: ${data.notes}`));
+	// añadir footer
+	if (footer) diagChildren.push(footer);
 	const diagPage = React.createElement(Page, { size: "A4", style: styles.page, key: "diagnostic" }, ...diagChildren);
 
 	// Build document with pages in order

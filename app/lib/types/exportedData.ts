@@ -24,4 +24,5 @@ export type ExportedData = {
     materials?: string;
     recommendations?: string;
   };
+  logoDataUrl?: string; 
 };

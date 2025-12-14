@@ -55,42 +55,36 @@ export default function PdfGenerator() {
     return await res.text();
   }
 
+  // helper: fetch image and convert to data URL (client only)
+  async function fetchImageAsDataUrl(url: string) {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const dataUrl = reader.result as string;
+          resolve(dataUrl);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (err) {
+      console.warn("Could not fetch image as data URL:", err);
+      return "";
+    }
+  }
+
   async function downloadClientPdf() {
     try {
       setGenerating(true);
       const { results, overall } = computeIso12354_4(massPerArea);
 
-      // load templates
-      const [coverTpl, resultsTpl, bandsTpl, materialsTpl, recsTpl] = await Promise.all([
-        loadTemplate("cover"),
-        loadTemplate("results"),
-        loadTemplate("bands"),
-        loadTemplate("materials"),
-        loadTemplate("recommendations"),
-      ]);
+      // fetch logo as data URL to ensure react-pdf can embed it
+      const logoDataUrl = await fetchImageAsDataUrl("/insonor.webp");
 
-      // build bands table HTML to inject into bandsTpl
-      const bandsRowsHtml = `<table><thead><tr><th>Frecuencia (Hz)</th><th>Valor (dB)</th></tr></thead><tbody>${
-        results.map((r) => `<tr><td>${r.freq}</td><td>${r.tl}</td></tr>`).join("")
-      }</tbody></table>`;
-
-      // sample materials list (if you have a JSON list, replace here)
-      const materialsHtml = `<li>Paneles de yeso (1 capa)</li><li>Vidrio doble 4/12/4</li><li>Puerta entamborada</li>`;
-
-      // sample recommendations list
-      const recsHtml = `<li>Reemplazar ventanas por doble acristalamiento.</li><li>Aumentar masa de paredes con trasdosado.</li>`;
-
-      // replace placeholders in templates
-      const generatedAt = new Date().toISOString();
-      const establishment = "Nombre del establecimiento"; // you can get this from JSON if present
-      const coverFilled = coverTpl
-        .replace("{{generatedAt}}", new Date(generatedAt).toLocaleString())
-        .replace("{{study}}", "ISO 12354-4")
-        .replace("{{establishment}}", establishment);
-
-      // build data object passed to factory
       const data = {
-        generatedAt,
+        generatedAt: new Date().toISOString(),
         title: `${title} — TL global ${overall} dB`,
         body: `${body}\nÁrea: ${area} m² — Nivel fuente: ${sourceLevel} dB`,
         parameters: {
@@ -106,28 +100,12 @@ export default function PdfGenerator() {
         },
         elements: sampleElements,
         summary: {},
-        diagnostic: { Lw_emission_db: 0 }, // Provide default value to avoid 'never' type
+        diagnostic: undefined,
+        criticalPoints: [],
+        improvementStrategy: [],
         notes: "",
-        templates: {}, // will fill below
-      };
-
-      const resultsFilled = resultsTpl
-        .replace("{{LpA}}", String((Math.round((results.reduce((s, r) => s + r.tl, 0) / results.length) || 0))))
-        .replace("{{Lw}}", String((Math.round((data?.diagnostic?.Lw_emission_db ?? 0) || 0)))
-          || "N/A")
-        .replace("{{observations}}", "Resultados calculados con aproximación (ley de masa).");
-
-      const bandsFilled = bandsTpl.replace("{{bands_table}}", bandsRowsHtml);
-      const materialsFilled = materialsTpl.replace("{{materials_list}}", materialsHtml);
-      const recsFilled = recsTpl.replace("{{recommendations_list}}", recsHtml);
-
-      // fill templates in data object
-      data.templates = {
-        cover: coverFilled,
-        results: resultsFilled,
-        bands: bandsFilled,
-        materials: materialsFilled,
-        recommendations: recsFilled,
+        // pass data URI for reliable embedding
+        logoDataUrl,
       };
 
       const docElement = createPdfDocumentElement(data) as ReactElement<DocumentProps>;
@@ -153,38 +131,11 @@ export default function PdfGenerator() {
       setGenerating(true);
       const { results, overall } = computeIso12354_4(massPerArea);
 
-      // load + fill templates (same as download)
-      const [coverTpl, resultsTpl, bandsTpl, materialsTpl, recsTpl] = await Promise.all([
-        loadTemplate("cover"),
-        loadTemplate("results"),
-        loadTemplate("bands"),
-        loadTemplate("materials"),
-        loadTemplate("recommendations"),
-      ]);
-      const bandsRowsHtml = `<table><thead><tr><th>Frecuencia (Hz)</th><th>Valor (dB)</th></tr></thead><tbody>${
-        results.map((r) => `<tr><td>${r.freq}</td><td>${r.tl}</td></tr>`).join("")
-      }</tbody></table>`;
-      const materialsHtml = `<li>Paneles de yeso (1 capa)</li><li>Vidrio doble 4/12/4</li><li>Puerta entamborada</li>`;
-      const recsHtml = `<li>Reemplazar ventanas por doble acristalamiento.</li><li>Aumentar masa de paredes con trasdosado.</li>`;
-
-      const generatedAt = new Date().toISOString();
-      const establishment = "Nombre del establecimiento";
-      const coverFilled = coverTpl
-        .replace("{{generatedAt}}", new Date(generatedAt).toLocaleString())
-        .replace("{{study}}", "ISO 12354-4")
-        .replace("{{establishment}}", establishment);
-
-      const resultsFilled = resultsTpl
-        .replace("{{LpA}}", String((Math.round((results.reduce((s, r) => s + r.tl, 0) / results.length) || 0))))
-        .replace("{{Lw}}", String((Math.round((0) || 0)) || "N/A"))
-        .replace("{{observations}}", "Resultados calculados con aproximación (ley de masa).");
-
-      const bandsFilled = bandsTpl.replace("{{bands_table}}", bandsRowsHtml);
-      const materialsFilled = materialsTpl.replace("{{materials_list}}", materialsHtml);
-      const recsFilled = recsTpl.replace("{{recommendations_list}}", recsHtml);
+      // fetch logo as data URL
+      const logoDataUrl = await fetchImageAsDataUrl("/insonor.webp");
 
       const data = {
-        generatedAt,
+        generatedAt: new Date().toISOString(),
         title: `${title} — TL global ${overall} dB`,
         body: `${body}\nÁrea: ${area} m² — Nivel fuente: ${sourceLevel} dB`,
         parameters: {
@@ -200,15 +151,11 @@ export default function PdfGenerator() {
         },
         elements: sampleElements,
         summary: {},
-        diagnostic: {},
+        diagnostic: undefined,
+        criticalPoints: [],
+        improvementStrategy: [],
         notes: "",
-        templates: {
-          cover: coverFilled,
-          results: resultsFilled,
-          bands: bandsFilled,
-          materials: materialsFilled,
-          recommendations: recsFilled,
-        },
+        logoDataUrl,
       };
 
       const docElement = createPdfDocumentElement(data) as ReactElement<DocumentProps>;
