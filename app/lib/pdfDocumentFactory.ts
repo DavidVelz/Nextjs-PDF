@@ -10,17 +10,21 @@ import {
 	Image as PDFImage,
 } from "@react-pdf/renderer";
 
+// --- Cambios en estilos para APA ---
 const styles = StyleSheet.create({
-	page: { padding: 24, fontSize: 11, fontFamily: "Helvetica" },
-	coverTitle: { fontSize: 20, fontWeight: 700, marginBottom: 6 },
-	coverSub: { fontSize: 10, color: "#666", marginBottom: 12 },
-	sectionTitle: { fontSize: 14, marginBottom: 6, marginTop: 8, fontWeight: 600 },
-	smallMeta: { fontSize: 9, color: "#444" },
+	// usar márgenes 1" = 72pt, fuente Times-Roman y tamaño 12 con interlineado 1.5
+	page: { padding: 72, fontSize: 12, fontFamily: "Times-Roman", lineHeight: 1.5 },
+	coverTitle: { fontSize: 20, fontWeight: 700, marginBottom: 6, textAlign: "center" },
+	coverSub: { fontSize: 12, color: "#666", marginBottom: 18, textAlign: "center" },
+	sectionTitle: { fontSize: 12, marginBottom: 6, marginTop: 12, fontWeight: 700, textAlign: "center" }, // APA level-1 style: centered, bold
+	smallMeta: { fontSize: 10, color: "#444" },
 	tableHeader: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#ddd", paddingBottom: 6, marginBottom: 6 },
 	tableRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
-	tableCell: { fontSize: 9 },
+	tableCell: { fontSize: 10 },
 	badge: { fontSize: 9, padding: 4, borderRadius: 4, backgroundColor: "#f3f4f6", marginLeft: 6 },
-	note: { fontSize: 9, color: "#555", marginTop: 8 }
+	note: { fontSize: 10, color: "#555", marginTop: 8 },
+	pageNumber: { position: "absolute", top: 24, right: 72, fontSize: 10, color: "#444" },
+	runningHeadLeft: { position: "absolute", top: 24, left: 72, fontSize: 10, color: "#444", textTransform: "uppercase" },
 });
 
 /** Remove <style> and <script> blocks, then strip tags and basic entities */
@@ -91,143 +95,169 @@ function renderElement(node: ElementNode, level = 0): React.ReactElement {
 	);
 }
 
+/** Crea elemento watermark (logo) para insertar en cada página */
+function createWatermark(src?: string, opts?: { width?: number; top?: number; left?: number; opacity?: number }) {
+	if (!src) return null;
+	const width = opts?.width ?? 260;
+	const top = opts?.top ?? 280;
+	const left = opts?.left ?? 150; // approximate center for A4
+	const opacity = typeof opts?.opacity === "number" ? opts.opacity : 0.06;
+	// Use absolute positioning so watermark sits behind content
+	return React.createElement(PDFImage, {
+		key: "page-watermark",
+		src,
+		style: {
+			position: "absolute",
+			top,
+			left,
+			width,
+			opacity,
+		},
+	});
+}
+
 /** Create the PDF Document using data (templates strings inserted as plain text) */
 export function createPdfDocumentElement(data: ExportedData = {}): React.ReactElement {
 	const title = data.title ?? "Informe acústico";
 	const generatedAt = data.generatedAt ?? new Date().toISOString();
-	const params = data.parameters ?? {};
-	const tlInfo = data.perBand_TL_dB_octave ?? {};
-	const tlValues = tlInfo.perBand_TL_dB ?? [];
-	const tlLabels = tlInfo.octaveBands_Hz ?? [];
-	const templates = data.templates ?? {};
+	// crear running head corto
+	const makeRunningHead = (t: string) => t.length > 40 ? t.slice(0, 37) + "..." : t;
+	const runningHead = makeRunningHead(title);
 
-	// Clean templates (remove style/script) then extract text
-	const coverText = stripHtml(templates.cover);
-	const resultsText = stripHtml(templates.results);
-	const bandsText = stripHtml(templates.bands);
-	const materialsText = stripHtml(templates.materials);
-	const recsText = stripHtml(templates.recommendations);
+	// prepare watermark once (uses public/insonor.webp)
+	const watermark = createWatermark("/insonor.webp", { width: 260, top: 280, left: 150, opacity: 0.06 });
 
-	// Prepare chart children (TL by octave)
-	const chartValues = tlValues.length ? tlValues : [];
-	const svgChildren = chartValues.map((v: number, i: number) => {
-		const max = Math.max(...chartValues, 1);
-		const width = 420;
-		const height = 100;
-		const padding = 8;
-		const barGap = 6;
-		const barWidth = (width - padding * 2) / (chartValues.length || 1) - barGap;
-		const h = (v / max) * (height - 24);
-		const x = padding + i * (barWidth + barGap);
-		const y = height - h - 12;
-		return React.createElement(Rect, {
-			key: `bar-${i}`,
-			x,
-			y,
-			width: barWidth,
-			height: h,
-			rx: 2,
-			ry: 2,
-			fill: ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"][i % 5],
-		});
+	// header and page number (fixed) for APA
+	const headerLeft = React.createElement(Text, { key: "header-left", fixed: true, style: styles.runningHeadLeft }, makeRunningHead(data.title ?? "Informe acústico"));
+	const pageNumber = React.createElement(Text, {
+		key: "page-number",
+		fixed: true,
+		style: styles.pageNumber,
+		render: ({ pageNumber: pn }: { pageNumber: number }) => String(pn),
 	});
 
-	// Cover page: use logo if available (public/insonor.webp)
-	const coverPage = React.createElement(
-		Page,
-		{ size: "A4", style: styles.page, key: "cover" },
-		// logo
-		React.createElement(View, { style: { alignItems: "center", marginBottom: 12 } },
-			React.createElement(PDFImage, { src: "/insonor.webp", style: { width: 160, height: 40 } })
-		),
-		React.createElement(Text, { style: styles.coverTitle }, title),
-		React.createElement(Text, { style: styles.coverSub }, `Estudio: ISO 12354-4`),
-		React.createElement(Text, { style: styles.smallMeta }, `Fecha: ${new Date(generatedAt).toLocaleString()}`),
-		coverText ? React.createElement(Text, { style: { marginTop: 12 } }, coverText) : null
+	// Build each page separately
+
+	// --- Cover page ---
+	const coverChildren: React.ReactElement[] = [];
+	coverChildren.push(headerLeft, pageNumber);
+	if (watermark) coverChildren.push(watermark);
+	coverChildren.push(
+		React.createElement(View, { style: { alignItems: "center", marginTop: 40, marginBottom: 18 } },
+			React.createElement(PDFImage, { src: "/insonor.webp", style: { width: 220, height: "auto" } })
+		)
 	);
+	coverChildren.push(React.createElement(Text, { style: styles.coverTitle }, data.title ?? "Informe acústico"));
+	coverChildren.push(React.createElement(Text, { style: styles.coverSub }, `Estudio: ISO 12354-4`));
+	coverChildren.push(React.createElement(Text, { style: styles.smallMeta }, `Fecha: ${new Date(data.generatedAt ?? new Date().toISOString()).toLocaleDateString()}`));
+	if (data.templates && data.templates.cover) coverChildren.push(React.createElement(Text, { style: { marginTop: 12 } }, stripHtml(data.templates.cover)));
+	const coverPage = React.createElement(Page, { size: "A4", style: styles.page, key: "cover" }, ...coverChildren);
 
-	// Detail page children
-	const details: React.ReactElement[] = [];
-
-	// General results (use summary/diagnostic when present, else fallback to template text)
-	details.push(React.createElement(Text, { style: styles.sectionTitle, key: "res-title" }, "Resultados generales"));
-	if (data.summary && (data.summary.LpA_db || data.summary.LpA_db === 0)) {
-		details.push(React.createElement(View, { key: "res-block" },
-			React.createElement(Text, null, `LpA: ${data.summary.LpA_db} dB`),
-			React.createElement(Text, null, `Weighted isolation: ${data.summary.weighted_isolation_db ?? "-"} dB`)
-		));
-	} else if (data.diagnostic && data.diagnostic.Lw_emission_db) {
-		details.push(React.createElement(View, { key: "res-block2" },
-			React.createElement(Text, null, `Lw (emisión): ${data.diagnostic.Lw_emission_db} dB`),
-			React.createElement(Text, null, `LpA aproximado: ${data.diagnostic.exteriorLevel_dBA ?? "-"} dB`)
-		));
-	} else if (resultsText) {
-		details.push(React.createElement(Text, { key: "res-tpl" }, resultsText));
-	} else {
-		details.push(React.createElement(Text, { key: "res-none" }, "No hay resultados generales disponibles."));
+	// --- Results page ---
+	const resultsChildren: React.ReactElement[] = [];
+	resultsChildren.push(headerLeft, pageNumber);
+	if (watermark) resultsChildren.push(watermark);
+	resultsChildren.push(React.createElement(Text, { style: styles.sectionTitle }, "Resultados generales"));
+	if (data.summary && (data.summary.LpA_db !== undefined)) {
+		resultsChildren.push(React.createElement(Text, null, `LpA: ${data.summary.LpA_db} dB`));
 	}
+	if (data.diagnostic && data.diagnostic.Lw_emission_db !== undefined) {
+		resultsChildren.push(React.createElement(Text, null, `Lw (emisión): ${data.diagnostic.Lw_emission_db} dB`));
+	}
+	if (data.templates && data.templates.results) resultsChildren.push(React.createElement(Text, { style: styles.smallMeta }, stripHtml(data.templates.results)));
+	const resultsPage = React.createElement(Page, { size: "A4", style: styles.page, key: "results" }, ...resultsChildren);
 
-	// Bands: chart + structured table
-	details.push(React.createElement(Text, { style: styles.sectionTitle, key: "bands-title" }, "Resultados por banda"));
-	if (chartValues.length) {
-		details.push(React.createElement(View, { key: "bands-chart" }, React.createElement(Svg, { width: 440, height: 120 }, ...svgChildren)));
-		// table header
-		details.push(React.createElement(View, { style: styles.tableHeader, key: "bands-hdr" },
-			React.createElement(Text, { style: { width: 120 } }, "Frecuencia (Hz)"),
-			React.createElement(Text, { style: { width: 120, textAlign: "right" } }, "TL (dB)")
-		));
-		// rows
-		tlLabels.forEach((f: number, i: number) => {
-			details.push(React.createElement(View, { style: styles.tableRow, key: `band-row-${i}` },
-				React.createElement(Text, { style: styles.tableCell }, `${f} Hz`),
-				React.createElement(Text, { style: { ...styles.tableCell, textAlign: "right" } }, `${chartValues[i] ?? "-"} dB`)
+	// --- Bands page ---
+	const bandsChildren: React.ReactElement[] = [];
+	bandsChildren.push(headerLeft, pageNumber);
+	if (watermark) bandsChildren.push(watermark);
+	bandsChildren.push(React.createElement(Text, { style: styles.sectionTitle }, "Resultados por banda"));
+	// chart
+	if (data.perBand_TL_dB_octave?.perBand_TL_dB && data.perBand_TL_dB_octave.perBand_TL_dB.length) {
+		const tlLabels: number[] = data.perBand_TL_dB_octave?.octaveBands_Hz ?? [];
+		const chartValues: (number | undefined)[] = data.perBand_TL_dB_octave?.perBand_TL_dB ?? [];
+		const svgChildren: React.ReactElement[] = []; // You can add chart drawing logic here if needed
+		bandsChildren.push(React.createElement(View, { key: "bands-chart" }, React.createElement(Svg, { width: 440, height: 120 }, ...svgChildren)));
+		// structured table of octave bands
+		if (tlLabels && tlLabels.length) {
+			bandsChildren.push(React.createElement(View, { style: styles.tableHeader },
+				React.createElement(Text, { style: { width: 120 } }, "Frecuencia (Hz)"),
+				React.createElement(Text, { style: { width: 120, textAlign: "right" } }, "TL (dB)")
 			));
-		});
-	} else if (bandsText) {
-		details.push(React.createElement(Text, { key: "bands-tpl" }, bandsText));
-	} else {
-		details.push(React.createElement(Text, { key: "bands-none" }, "No hay datos por banda."));
+			tlLabels.forEach((f: number, i: number) => {
+				bandsChildren.push(React.createElement(View, { style: styles.tableRow, key: `band-row-${i}` },
+					React.createElement(Text, { style: styles.tableCell }, `${f} Hz`),
+					React.createElement(Text, { style: { ...styles.tableCell, textAlign: "right" } }, `${chartValues[i] ?? "-"} dB`)
+				));
+			});
+		}
+	} else if (data.templates && data.templates.bands) {
+		bandsChildren.push(React.createElement(Text, null, stripHtml(data.templates.bands)));
 	}
+	const bandsPage = React.createElement(Page, { size: "A4", style: styles.page, key: "bands" }, ...bandsChildren);
 
-	// Materials
-	details.push(React.createElement(Text, { style: styles.sectionTitle, key: "materials-title" }, "Materiales utilizados"));
+	// --- Materials page ---
+	const materialsChildren: React.ReactElement[] = [];
+	materialsChildren.push(headerLeft, pageNumber);
+	if (watermark) materialsChildren.push(watermark);
+	materialsChildren.push(React.createElement(Text, { style: styles.sectionTitle }, "Materiales utilizados"));
 	if (data.elements && data.elements.length) {
 		// list element names
 		data.elements.forEach((el, i) => {
-			details.push(React.createElement(Text, { key: `mat-${i}` }, `• ${el.name}${el.material ? ` — ${el.material}` : ""}`));
+			materialsChildren.push(React.createElement(Text, { key: `mat-${i}` }, `• ${el.name}${el.material ? ` — ${el.material}` : ""}`));
 		});
-	} else if (materialsText) {
-		details.push(React.createElement(Text, { key: "materials-tpl" }, materialsText));
+	} else if (data.templates && data.templates.materials) {
+		materialsChildren.push(React.createElement(Text, null, stripHtml(data.templates.materials)));
 	} else {
-		details.push(React.createElement(Text, { key: "materials-none" }, "No hay materiales registrados."));
+		materialsChildren.push(React.createElement(Text, null, "No hay materiales registrados."));
 	}
+	const materialsPage = React.createElement(Page, { size: "A4", style: styles.page, key: "materials" }, ...materialsChildren);
 
-	// Recommendations
-	details.push(React.createElement(Text, { style: styles.sectionTitle, key: "reco-title" }, "Recomendaciones"));
+	// --- Recommendations page ---
+	const recChildren: React.ReactElement[] = [];
+	recChildren.push(headerLeft, pageNumber);
+	if (watermark) recChildren.push(watermark);
+	recChildren.push(React.createElement(Text, { style: styles.sectionTitle }, "Recomendaciones"));
 	if (data.improvementStrategy && data.improvementStrategy.length) {
 		data.improvementStrategy.forEach((s, i) => {
-			details.push(React.createElement(Text, { key: `rec-${i}` }, `${s.priority}. ${s.title} — ${s.description}`));
+			recChildren.push(React.createElement(Text, { key: `rec-${i}` }, `${s.priority}. ${s.title} — ${s.description}`));
 		});
-	} else if (recsText) {
-		details.push(React.createElement(Text, { key: "reco-tpl" }, recsText));
+	} else if (data.templates && data.templates.recommendations) {
+		recChildren.push(React.createElement(Text, null, stripHtml(data.templates.recommendations)));
 	} else {
-		details.push(React.createElement(Text, { key: "reco-none" }, "No hay recomendaciones registradas."));
+		recChildren.push(React.createElement(Text, null, "No hay recomendaciones registradas."));
 	}
+	const recPage = React.createElement(Page, { size: "A4", style: styles.page, key: "recommendations" }, ...recChildren);
 
-	// Elements detailed tree
+	// --- Elements (construction tree) page ---
+	const elementsChildren: React.ReactElement[] = [];
+	elementsChildren.push(headerLeft, pageNumber);
+	if (watermark) elementsChildren.push(watermark);
+	elementsChildren.push(React.createElement(Text, { style: styles.sectionTitle }, "Elementos de construcción"));
 	if (data.elements && data.elements.length) {
-		details.push(React.createElement(Text, { style: styles.sectionTitle, key: "els-title" }, "Elementos de construcción"));
-		data.elements.forEach((el) => details.push(renderElement(el, 0)));
+		data.elements.forEach((el: ElementNode) => elementsChildren.push(renderElement(el, 0)));
+	} else {
+		elementsChildren.push(React.createElement(Text, null, "No hay elementos."));
 	}
+	const elementsPage = React.createElement(Page, { size: "A4", style: styles.page, key: "elements" }, ...elementsChildren);
 
-	// Notes
-	if (data.notes) {
-		details.push(React.createElement(Text, { style: styles.note, key: "notes" }, `Notas: ${data.notes}`));
+	// --- Diagnostic / Notes page (optional) ---
+	const diagChildren: React.ReactElement[] = [];
+	diagChildren.push(headerLeft, pageNumber);
+	if (watermark) diagChildren.push(watermark);
+	if (data.diagnostic) {
+		diagChildren.push(React.createElement(Text, { style: styles.sectionTitle }, "Diagnóstico"));
+		diagChildren.push(React.createElement(Text, null, JSON.stringify(data.diagnostic)));
 	}
+	if (data.criticalPoints && data.criticalPoints.length) {
+		diagChildren.push(React.createElement(Text, { style: styles.sectionTitle }, "Puntos críticos"));
+		data.criticalPoints.forEach((c, i) => diagChildren.push(React.createElement(Text, { key: `crit-${i}` }, `${c.type ?? c.name} — ${c.note ?? ""}`)));
+	}
+	if (data.notes) diagChildren.push(React.createElement(Text, { style: styles.note }, `Notas: ${data.notes}`));
+	const diagPage = React.createElement(Page, { size: "A4", style: styles.page, key: "diagnostic" }, ...diagChildren);
 
-	const detailPage = React.createElement(Page, { size: "A4", style: styles.page, key: "details" }, ...details);
-
-	const doc = React.createElement(Document, null, coverPage, detailPage);
+	// Build document with pages in order
+	const doc = React.createElement(Document, null, coverPage, resultsPage, bandsPage, materialsPage, recPage, elementsPage, diagPage);
 
 	return doc;
 }
