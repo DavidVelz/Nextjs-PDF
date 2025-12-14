@@ -9,72 +9,12 @@ import {
 	Rect,
 	Image as PDFImage,
 } from "@react-pdf/renderer";
+import { HtmlUtils } from "./utils/htmlUtils";
+// reemplazamos la definición local de tipos por import desde la carpeta types
+import { PerBandEntry, ElementNode, ExportedData } from "./types";
+// reemplazamos la definición local de estilos por la importación:
+import { apaStyles as styles } from "./styles/apaStyles";
 
-// --- Cambios en estilos para APA ---
-const styles = StyleSheet.create({
-	// usar márgenes 1" = 72pt, fuente Times-Roman y tamaño 12 con interlineado 1.5
-	page: { padding: 72, fontSize: 12, fontFamily: "Times-Roman", lineHeight: 1.5 },
-	coverTitle: { fontSize: 20, fontWeight: 700, marginBottom: 6, textAlign: "center" },
-	coverSub: { fontSize: 12, color: "#666", marginBottom: 18, textAlign: "center" },
-	sectionTitle: { fontSize: 12, marginBottom: 6, marginTop: 12, fontWeight: 700, textAlign: "center" }, // APA level-1 style: centered, bold
-	smallMeta: { fontSize: 10, color: "#444" },
-	tableHeader: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#ddd", paddingBottom: 6, marginBottom: 6 },
-	tableRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
-	tableCell: { fontSize: 10 },
-	badge: { fontSize: 9, padding: 4, borderRadius: 4, backgroundColor: "#f3f4f6", marginLeft: 6 },
-	note: { fontSize: 10, color: "#555", marginTop: 8 },
-	pageNumber: { position: "absolute", top: 24, right: 72, fontSize: 10, color: "#444" },
-	runningHeadLeft: { position: "absolute", top: 24, left: 72, fontSize: 10, color: "#444", textTransform: "uppercase" },
-});
-
-/** Remove <style> and <script> blocks, then strip tags and basic entities */
-function stripHtml(html?: string): string {
-	if (!html) return "";
-	// remove style and script contents entirely
-	let s = html.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "");
-	s = s.replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "");
-	// normalize newlines
-	s = s.replace(/\r\n|\r/g, "\n");
-	// replace block tags with newline
-	s = s.replace(/<\/(div|p|br|li|h[1-6]|tr|table|thead|tbody)>/gi, "\n");
-	// remove remaining tags
-	s = s.replace(/<[^>]+>/g, "");
-	// unescape few entities
-	s = s.replace(/&nbsp;/g, " ").replace(/&amp;/g, "&");
-	// collapse multiple newlines
-	s = s.replace(/\n\s*\n+/g, "\n\n");
-	return s.trim();
-}
-
-type PerBandEntry = { freq_Hz: number; Lp_dB?: number; Lw_dB?: number; TL_dB?: number };
-type ElementNode = { name: string; lw?: number | null; lp?: number | null; material?: string; children?: ElementNode[] };
-
-type ExportedData = {
-	generatedAt?: string;
-	title?: string;
-	body?: string;
-	parameters?: { massPerArea_kg_per_m2?: number; area_m2?: number; sourceLevel_dB?: number };
-	frequencies_used_Hz?: number[];
-	perBand_TL_dB_octave?: { octaveBands_Hz?: number[]; perBand_TL_dB?: number[]; overall_TL_dB?: number };
-	perBand_Lp_exterior_dB?: PerBandEntry[];
-	perBand_Lw_dB?: PerBandEntry[];
-	facade_impacts_dB?: { name: string; impact_dB: number }[];
-	summary?: Record<string, any>;
-	elements?: ElementNode[];
-	diagnostic?: Record<string, any>;
-	criticalPoints?: any[];
-	improvementStrategy?: any[];
-	notes?: string;
-	templates?: {
-		cover?: string;
-		results?: string;
-		bands?: string;
-		materials?: string;
-		recommendations?: string;
-	};
-};
-
-/** Render hierarchical construction elements */
 function renderElement(node: ElementNode, level = 0): React.ReactElement {
 	const indent = level * 8;
 	const leftStyle = { marginLeft: indent };
@@ -150,7 +90,7 @@ export function createPdfDocumentElement(data: ExportedData = {}): React.ReactEl
 	coverChildren.push(React.createElement(Text, { style: styles.coverTitle }, data.title ?? "Informe acústico"));
 	coverChildren.push(React.createElement(Text, { style: styles.coverSub }, `Estudio: ISO 12354-4`));
 	coverChildren.push(React.createElement(Text, { style: styles.smallMeta }, `Fecha: ${new Date(data.generatedAt ?? new Date().toISOString()).toLocaleDateString()}`));
-	if (data.templates && data.templates.cover) coverChildren.push(React.createElement(Text, { style: { marginTop: 12 } }, stripHtml(data.templates.cover)));
+	if (data.templates && data.templates.cover) coverChildren.push(React.createElement(Text, { style: { marginTop: 12 } }, HtmlUtils.stripHtml(data.templates.cover)));
 	const coverPage = React.createElement(Page, { size: "A4", style: styles.page, key: "cover" }, ...coverChildren);
 
 	// --- Results page ---
@@ -164,7 +104,7 @@ export function createPdfDocumentElement(data: ExportedData = {}): React.ReactEl
 	if (data.diagnostic && data.diagnostic.Lw_emission_db !== undefined) {
 		resultsChildren.push(React.createElement(Text, null, `Lw (emisión): ${data.diagnostic.Lw_emission_db} dB`));
 	}
-	if (data.templates && data.templates.results) resultsChildren.push(React.createElement(Text, { style: styles.smallMeta }, stripHtml(data.templates.results)));
+	if (data.templates && data.templates.results) resultsChildren.push(React.createElement(Text, { style: styles.smallMeta }, HtmlUtils.stripHtml(data.templates.results)));
 	const resultsPage = React.createElement(Page, { size: "A4", style: styles.page, key: "results" }, ...resultsChildren);
 
 	// --- Bands page ---
@@ -192,7 +132,7 @@ export function createPdfDocumentElement(data: ExportedData = {}): React.ReactEl
 			});
 		}
 	} else if (data.templates && data.templates.bands) {
-		bandsChildren.push(React.createElement(Text, null, stripHtml(data.templates.bands)));
+		bandsChildren.push(React.createElement(Text, null, HtmlUtils.stripHtml(data.templates.bands)));
 	}
 	const bandsPage = React.createElement(Page, { size: "A4", style: styles.page, key: "bands" }, ...bandsChildren);
 
@@ -207,7 +147,7 @@ export function createPdfDocumentElement(data: ExportedData = {}): React.ReactEl
 			materialsChildren.push(React.createElement(Text, { key: `mat-${i}` }, `• ${el.name}${el.material ? ` — ${el.material}` : ""}`));
 		});
 	} else if (data.templates && data.templates.materials) {
-		materialsChildren.push(React.createElement(Text, null, stripHtml(data.templates.materials)));
+		materialsChildren.push(React.createElement(Text, null, HtmlUtils.stripHtml(data.templates.materials)));
 	} else {
 		materialsChildren.push(React.createElement(Text, null, "No hay materiales registrados."));
 	}
@@ -223,7 +163,7 @@ export function createPdfDocumentElement(data: ExportedData = {}): React.ReactEl
 			recChildren.push(React.createElement(Text, { key: `rec-${i}` }, `${s.priority}. ${s.title} — ${s.description}`));
 		});
 	} else if (data.templates && data.templates.recommendations) {
-		recChildren.push(React.createElement(Text, null, stripHtml(data.templates.recommendations)));
+		recChildren.push(React.createElement(Text, null, HtmlUtils.stripHtml(data.templates.recommendations)));
 	} else {
 		recChildren.push(React.createElement(Text, null, "No hay recomendaciones registradas."));
 	}
