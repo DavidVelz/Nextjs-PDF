@@ -1,230 +1,206 @@
 "use client";
-import React, { ReactElement, useState } from "react";
-import { DocumentProps, pdf } from "@react-pdf/renderer";
-import { computeIso12354_4, tlToTau, OCTAVE_BANDS } from "../lib/iso12354";
+import React, { useState, useEffect } from "react";
+import { pdf } from "@react-pdf/renderer";
 import { createPdfDocumentElement } from "../lib/pdfDocumentFactory";
+import { computeIso12354_4, OCTAVE_BANDS } from "../lib/iso12354";
 
-// ejemplo de elementos de construcción (jerarquía)
-const sampleElements = [
-  {
-    name: "Piso",
-    lw: 0.0,
-    lp: 0.0,
-    children: [{ name: "Piso 1", lw: 0.0, lp: 0.0 }],
-  },
-  {
-    name: "Techo",
-    lw: 85.6,
-    children: [{ name: "Techo 1", lw: 98.8, lp: 78.2 }],
-  },
-  {
-    name: "Fachadas",
-    lw: 80.2,
-    children: [
-      { name: "Pared 1", lw: 89.7, lp: 69.6 },
-      { name: "Pared 2", lw: 88.7, lp: 68.9 },
-      { name: "Pared 3", lw: 89.7, lp: 69.6 },
-      {
-        name: "Pared 4",
-        lw: 105.4,
-        lp: 85.6,
-        children: [
-          { name: "Abertura 1", lw: 0.0, lp: 0.0 },
-          { name: "Abertura 2", lw: 0.0, lp: 0.0 },
-        ],
-      },
-    ],
-  },
-];
+type Band = { freq: number; tl: number; lp?: number; lw?: number };
+
+// Genera resultados inventados de forma determinística a partir de masa por área
+function generateFakeBands(massPerArea: number): Band[] {
+  const baseOffset = Math.max(1, massPerArea / 2);
+  return OCTAVE_BANDS.map((f, i) => {
+    const tl = Math.round((20 + i * 6 + baseOffset + (Math.sin(i) * 2)) * 10) / 10;
+    const lp = Math.round((70 + Math.log10(f) * 10 - baseOffset * 0.3) * 10) / 10;
+    const lw = Math.round((lp + tl) * 10) / 10; // simplificado
+    return { freq: f, tl, lp, lw };
+  });
+}
 
 export default function PdfGenerator() {
-  const [title, setTitle] = useState("Cálculo ISO 12354-4 (ejemplo)");
-  const [body, setBody] = useState("Este PDF incluye una tabla de pérdidas de transmisión por banda calculadas con una aproximación.");
+  const [title, setTitle] = useState("Informe acústico - ejemplo");
   const [massPerArea, setMassPerArea] = useState<number>(15);
   const [area, setArea] = useState<number>(10);
   const [sourceLevel, setSourceLevel] = useState<number>(80);
+  const [useFake, setUseFake] = useState<boolean>(true);
+  const [bands, setBands] = useState<Band[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [logoDataUrl, setLogoDataUrl] = useState<string>("");
 
-  function computePreview() {
-    return computeIso12354_4(massPerArea);
-  }
+  useEffect(() => {
+    // preload logo as data URI
+    fetchImageAsDataUrl("/insonor.png").then((d) => {
+      if (d) setLogoDataUrl(d);
+      else fetchImageAsDataUrl("/insonor.png").then((d2) => d2 && setLogoDataUrl(d2));
+    });
+  }, []);
 
-  async function loadTemplate(name: string) {
-    const res = await fetch(`/pdf-templates/${name}.html`);
-    if (!res.ok) return "";
-    return await res.text();
-  }
-
-  // helper: fetch image and convert to data URL (client only)
-  async function fetchImageAsDataUrl(url: string) {
-    try {
-      const res = await fetch(url);
-      const blob = await res.blob();
-      return await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const dataUrl = reader.result as string;
-          resolve(dataUrl);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-    } catch (err) {
-      console.warn("Could not fetch image as data URL:", err);
-      return "";
+  useEffect(() => {
+    // compute bands either from real calc or fake
+    if (useFake) {
+      setBands(generateFakeBands(massPerArea));
+    } else {
+      const { results } = computeIso12354_4(massPerArea);
+      // map computeIso results to Band[]
+      setBands(results.map((r) => ({ freq: r.freq, tl: r.tl } as Band)));
     }
+  }, [massPerArea, useFake]);
+
+  // calcula LpA y Lw a partir de bandas (promedio energético simplificado)
+  function energyAverageDb(values: number[]) {
+    if (!values || !values.length) return null;
+    const lin = values.map((v) => Math.pow(10, v / 10));
+    const mean = lin.reduce((s, v) => s + v, 0) / lin.length;
+    return Math.round((10 * Math.log10(mean)) * 10) / 10;
   }
 
-  async function downloadClientPdf() {
+  const previewLpA = energyAverageDb(bands.map((b) => b.lp ?? (b.tl ? 60 : NaN)).filter(Number.isFinite) as number[]) ?? null;
+  const previewLw = energyAverageDb(bands.map((b) => b.lw ?? (b.tl ? 80 : NaN)).filter(Number.isFinite) as number[]) ?? null;
+
+  async function buildDataObject() {
+    const tlArray = bands.map((b) => b.tl);
+    const lpEntries = bands.map((b) => ({ freq_Hz: b.freq, Lp_dB: b.lp ?? null }));
+    const lwEntries = bands.map((b) => ({ freq_Hz: b.freq, Lw_dB: b.lw ?? null }));
+
+    return {
+      generatedAt: new Date().toISOString(),
+      title,
+      body: `Informe generado (demo). Área: ${area} m² — Nivel fuente: ${sourceLevel} dB`,
+      parameters: { massPerArea_kg_per_m2: massPerArea, area_m2: area, sourceLevel_dB: sourceLevel },
+      frequencies_used_Hz: bands.map((b) => b.freq),
+      perBand_TL_dB_octave: { octaveBands_Hz: bands.map((b) => b.freq), perBand_TL_dB: tlArray, overall_TL_dB: Math.round((tlArray.reduce((s, v) => s + v, 0) / tlArray.length) * 10) / 10 },
+      perBand_Lp_exterior_dB: lpEntries,
+      perBand_Lw_dB: lwEntries,
+      elements: [
+        { name: "Fachada", lw: 80.2, lp: 0.0, material: "Ladrillo" },
+        { name: "Ventana", lw: 30.0, lp: 25.0, material: "Vidrio doble" },
+      ],
+      summary: { LpA_db: previewLpA, Lw_db: previewLw },
+      diagnostic: { note: "Resultados inventados para demostración" },
+      improvementStrategy: [{ priority: 1, title: "Mejorar ventanas", description: "Reemplazar por doble acristalamiento" }],
+      notes: "Valores de ejemplo generados localmente (demo).",
+      logoDataUrl,
+    } as any;
+  }
+
+  async function downloadPdf() {
     try {
       setGenerating(true);
-      const { results, overall } = computeIso12354_4(massPerArea);
-
-      // fetch logo as data URL to ensure react-pdf can embed it
-      const logoDataUrl = await fetchImageAsDataUrl("/insonor.webp");
-
-      const data = {
-        generatedAt: new Date().toISOString(),
-        title: `${title} — TL global ${overall} dB`,
-        body: `${body}\nÁrea: ${area} m² — Nivel fuente: ${sourceLevel} dB`,
-        parameters: {
-          massPerArea_kg_per_m2: massPerArea,
-          area_m2: area,
-          sourceLevel_dB: sourceLevel,
-        },
-        frequencies_used_Hz: OCTAVE_BANDS,
-        perBand_TL_dB_octave: {
-          octaveBands_Hz: OCTAVE_BANDS,
-          perBand_TL_dB: results.map((r) => r.tl),
-          overall_TL_dB: overall,
-        },
-        elements: sampleElements,
-        summary: {},
-        diagnostic: undefined,
-        criticalPoints: [],
-        improvementStrategy: [],
-        notes: "",
-        // pass data URI for reliable embedding
-        logoDataUrl,
-      };
-
-      const docElement = createPdfDocumentElement(data) as ReactElement<DocumentProps>;
-      const blob = await pdf(docElement).toBlob();
+      const data = await buildDataObject();
+      const doc = createPdfDocumentElement(data) as React.ReactElement<import("@react-pdf/renderer").DocumentProps>;
+      const blob = await pdf(doc).toBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${(title || "document").replace(/\s+/g, "_")}.pdf`;
+      a.download = `${title.replace(/\s+/g, "_")}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (err) {
-      console.error("Error generando PDF en cliente (download):", err);
-      alert("Error generando PDF en cliente. Revisa la consola.");
+      console.error(err);
+      alert("Error generando PDF");
     } finally {
       setGenerating(false);
     }
   }
-
-  async function openInNewTab() {
-    try {
-      setGenerating(true);
-      const { results, overall } = computeIso12354_4(massPerArea);
-
-      // fetch logo as data URL
-      const logoDataUrl = await fetchImageAsDataUrl("/insonor.webp");
-
-      const data = {
-        generatedAt: new Date().toISOString(),
-        title: `${title} — TL global ${overall} dB`,
-        body: `${body}\nÁrea: ${area} m² — Nivel fuente: ${sourceLevel} dB`,
-        parameters: {
-          massPerArea_kg_per_m2: massPerArea,
-          area_m2: area,
-          sourceLevel_dB: sourceLevel,
-        },
-        frequencies_used_Hz: OCTAVE_BANDS,
-        perBand_TL_dB_octave: {
-          octaveBands_Hz: OCTAVE_BANDS,
-          perBand_TL_dB: results.map((r) => r.tl),
-          overall_TL_dB: overall,
-        },
-        elements: sampleElements,
-        summary: {},
-        diagnostic: undefined,
-        criticalPoints: [],
-        improvementStrategy: [],
-        notes: "",
-        logoDataUrl,
-      };
-
-      const docElement = createPdfDocumentElement(data) as ReactElement<DocumentProps>;
-      const blob = await pdf(docElement).toBlob();
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-    } catch (err) {
-      console.error("Error generando PDF en cliente (open):", err);
-      alert("Error generando PDF en cliente. Revisa la consola.");
-    } finally {
-      setGenerating(false);
-    }
-  }
-
-  const preview = computePreview();
 
   return (
-    <div className="w-full max-w-3xl space-y-4">
-      <div className="flex flex-col gap-2">
-        <label className="font-medium">Título</label>
-        <input className="border rounded px-2 py-1" value={title} onChange={(e) => setTitle(e.target.value)} />
+    <div className="w-full max-w-3xl space-y-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold">Resumen rápido</h3>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={useFake} onChange={(e) => setUseFake(e.target.checked)} />
+          Usar resultados inventados
+        </label>
+      </div>
 
-        <label className="font-medium">Contenido</label>
-        <textarea className="border rounded px-2 py-1" rows={4} value={body} onChange={(e) => setBody(e.target.value)} />
+      <div className="grid grid-cols-2 gap-4">
+        <div className="p-4 border rounded shadow-sm bg-white">
+          <div className="text-sm text-gray-500">LpA (nivel ponderado A)</div>
+          <div className="text-2xl font-bold text-gray-900">{previewLpA !== null ? `${previewLpA} dB(A)` : "N/D"}</div>
+          <div className="mt-2 text-sm text-gray-600">Indicador del nivel percibido por el oído humano.</div>
+        </div>
 
-        <label className="font-medium">Masa superficial (kg/m²) — m</label>
-        <input
-          type="number"
-          className="border rounded px-2 py-1"
-          value={String(massPerArea)}
-          onChange={(e) => setMassPerArea(Number(e.target.value))}
-        />
-
-        <label className="font-medium">Área (m²)</label>
-        <input type="number" className="border rounded px-2 py-1" value={String(area)} onChange={(e) => setArea(Number(e.target.value))} />
-
-        <label className="font-medium">Nivel fuente (dB)</label>
-        <input type="number" className="border rounded px-2 py-1" value={String(sourceLevel)} onChange={(e) => setSourceLevel(Number(e.target.value))} />
+        <div className="p-4 border rounded shadow-sm bg-white">
+          <div className="text-sm text-gray-500">Lw (nivel de potencia sonora)</div>
+          <div className="text-2xl font-bold text-gray-900">{previewLw !== null ? `${previewLw} dB` : "N/D"}</div>
+          <div className="mt-2 text-sm text-gray-600">Potencia acústica total de la fuente (estimada).</div>
+        </div>
       </div>
 
       <div>
-        <h3 className="font-semibold">Resultados (vista previa)</h3>
-        <div className="grid grid-cols-4 gap-2 text-sm">
-          <div className="font-medium">Banda</div>
-          <div className="font-medium">TL (dB)</div>
-          <div className="font-medium">Tau</div>
-          <div className="font-medium">—</div>
-          {preview.results.map((r) => (
-            <React.Fragment key={r.freq}>
-              <div>{r.freq} Hz</div>
-              <div>{r.tl} dB</div>
-              <div>{tlToTau(r.tl).toExponential(2)}</div>
-              <div />
-            </React.Fragment>
-          ))}
+        <h4 className="font-semibold mb-2">Resultados por banda (octava)</h4>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="text-left text-xs text-gray-600">
+                <th className="px-2 py-1">Frecuencia (Hz)</th>
+                <th className="px-2 py-1">TL (dB)</th>
+                <th className="px-2 py-1">Lp (dB)</th>
+                <th className="px-2 py-1">Lw (dB)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bands.map((b) => (
+                <tr key={b.freq} className="odd:bg-white even:bg-slate-50">
+                  <td className="px-2 py-1">{b.freq}</td>
+                  <td className="px-2 py-1 font-medium">{b.tl}</td>
+                  <td className="px-2 py-1">{b.lp ?? "-"}</td>
+                  <td className="px-2 py-1">{b.lw ?? "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <div className="mt-2">TL global aproximado: {preview.overall} dB</div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <button onClick={downloadClientPdf} className="px-3 py-2 rounded bg-blue-600 text-white" disabled={generating}>
-          {generating ? "Generando..." : "Descargar PDF (cliente)"}
-        </button>
+      <div>
+        <h4 className="font-semibold mb-2">Materiales y recomendaciones</h4>
+        <ul className="list-disc ml-6 mb-2">
+          <li><strong>Fachada:</strong> Ladrillo, trasdosado recomendado.</li>
+          <li><strong>Ventanas:</strong> Vidrio doble 4/12/4 — prioridad de mejora.</li>
+        </ul>
+        <div className="text-sm text-gray-600">Recomendación principal: priorizar mejora de aberturas para reducir LpA.</div>
+      </div>
 
-        <button onClick={openInNewTab} className="px-3 py-2 rounded border bg-white" disabled={generating}>
-          {generating ? "Generando..." : "Abrir en nueva pestaña (cliente)"}
+      <div className="flex gap-3">
+        <button onClick={downloadPdf} disabled={generating} className="px-4 py-2 bg-blue-600 text-white rounded">
+          {generating ? "Generando..." : "Descargar PDF"}
+        </button>
+        <button
+          onClick={async () => {
+            setGenerating(true);
+            const data = await buildDataObject();
+            const doc = createPdfDocumentElement(data) as React.ReactElement<import("@react-pdf/renderer").DocumentProps>;
+            const blob = await pdf(doc).toBlob();
+            const url = URL.createObjectURL(blob);
+            window.open(url, "_blank");
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
+            setGenerating(false);
+          }}
+          disabled={generating}
+          className="px-4 py-2 border rounded"
+        >
+          {generating ? "Generando..." : "Abrir en nueva pestaña"}
         </button>
       </div>
     </div>
   );
+}
+
+async function fetchImageAsDataUrl(url: string) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return "";
+    const blob = await res.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return "";
+  }
 }

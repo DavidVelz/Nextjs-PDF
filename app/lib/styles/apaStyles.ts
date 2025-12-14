@@ -42,8 +42,8 @@ export const apaStyles = StyleSheet.create({
 	},
 
 	// Énfasis / negrita
-	strong: { fontFamily: fontFamilies.MontserratBold, fontWeight: 700, fontStyle: "normal", color: "#111" },
-	importantValue: { fontFamily: fontFamilies.MontserratBold, fontSize: 12, fontWeight: 700, color: "#111", fontStyle: "normal" },
-	labelBold: { fontFamily: fontFamilies.MontserratBold, fontSize: 10, fontWeight: 700, fontStyle: "normal" },
-	elementName: { fontFamily: fontFamilies.MontserratBold, fontSize: 10, fontWeight: 700, fontStyle: "normal" },
+	strong: { fontFamily: fontFamilies.Montserrat, fontWeight: 700, fontStyle: "normal", color: "#111" },
+	importantValue: { fontFamily: fontFamilies.Montserrat, fontSize: 12, fontWeight: 700, color: "#111", fontStyle: "normal" },
+	labelBold: { fontFamily: fontFamilies.Montserrat, fontSize: 10, fontWeight: 700, fontStyle: "normal" },
+	elementName: { fontFamily: fontFamilies.Montserrat, fontSize: 10, fontWeight: 700, fontStyle: "normal" },
 });

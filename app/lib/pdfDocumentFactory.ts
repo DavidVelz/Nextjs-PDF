@@ -15,6 +15,27 @@ import { PerBandEntry, ElementNode, ExportedData } from "./types";
 // reemplazamos la definición local de estilos por la importación:
 import { apaStyles as styles } from "./styles/apaStyles";
 
+// --- NUEVAS UTILIDADES ---
+// Convierte un array de entradas {freq_Hz, value_dB} a un promedio energético en dB
+function energyAverageFromDbValues(valuesDb: number[]): number | null {
+	if (!valuesDb || !valuesDb.length) return null;
+	// convertir dB -> linear (10^(dB/10)), promedio, volver a dB
+	const linear = valuesDb.map((d) => Math.pow(10, (d || 0) / 10));
+	const meanLinear = linear.reduce((s, v) => s + v, 0) / linear.length;
+	const avgDb = 10 * Math.log10(meanLinear);
+	return Number(isFinite(avgDb) ? avgDb.toFixed(1) : NaN);
+}
+
+// Extrae un array numérico desde entradas {freq_Hz, Lp_dB} u objetos similares
+function mapEntriesToDb(entries: any[], key: string) {
+	if (!Array.isArray(entries)) return [];
+	return entries.map((e) => {
+		if (e == null) return undefined;
+		// admite varios nombres: Lp_dB / Lw_dB / value
+		return typeof e[key] === "number" ? e[key] : (typeof e.value === "number" ? e.value : undefined);
+	}).filter((v) => typeof v === "number") as number[];
+}
+
 function renderElement(node: ElementNode, level = 0): React.ReactElement {
 	const indent = level * 8;
 	const leftStyle = { marginLeft: indent };
@@ -100,13 +121,21 @@ export function createPdfDocumentElement(data: ExportedData = {}): React.ReactEl
 	const makeRunningHead = (t: string) => t.length > 40 ? t.slice(0, 37) + "..." : t;
 	const runningHead = makeRunningHead(title);
 
-	// resolve logo source (prefer data URI)
+	// obtener campos (con fallbacks)
+	const establishment = (data.summary && (data.summary as any).establishment) || (data as any).establishment || "La Candela";
+	const studyName = (data as any).studyName || data.title || "xxxxxx";
+	const studyDateRaw = (data as any).studyDate || data.generatedAt || new Date().toISOString();
+	const studyDate = (() => {
+		try { return new Date(studyDateRaw).toLocaleDateString(); } catch { return String(studyDateRaw); }
+	})();
+
+	// prefer explicit data URI (logoDataUrl). Otherwise force use of local public file '/insonor.png'
 	const rawLogo = (data as any).logoDataUrl;
 	const logoSource = typeof rawLogo === "string" && rawLogo.startsWith("data:") ? rawLogo : "/insonor.png";
+	const watermark = createWatermark(logoSource, { width: 140, top: 320, left: 180, opacity: 0.04 });
 
-	// create watermark and footer
-	const watermark = createWatermark(logoSource, { width: 100, top: 320, left: 180, opacity: 0.04 });
-	const footer = createFooter(logoSource, "app.insonor.co");
+	// Define footer once to use in all pages
+	const footer = createFooter(logoSource, "insonor.cl");
 
 	// header and page number (fixed) for APA
 	const headerLeft = React.createElement(Text, { key: "header-left", fixed: true, style: styles.runningHeadLeft }, makeRunningHead(data.title ?? "Informe acústico"));
@@ -117,23 +146,50 @@ export function createPdfDocumentElement(data: ExportedData = {}): React.ReactEl
 		render: ({ pageNumber: pn }: { pageNumber: number }) => String(pn),
 	});
 
-	// Build each page separately
-
-	// --- Cover page ---
+	// --- Cover page (reemplazado) ---
 	const coverChildren: React.ReactElement[] = [];
 	coverChildren.push(headerLeft, pageNumber);
 	if (watermark) coverChildren.push(watermark);
+
+	// línea superior distinta al título central
 	coverChildren.push(
-		React.createElement(View, { style: { alignItems: "center", marginTop: 40, marginBottom: 18 } },
-			React.createElement(PDFImage, { src: "/insonor.png", style: { width: 140, height: "auto", opacity: 0.95 } })
+		React.createElement(Text, { key: "top-line", style: { ...styles.smallMeta, textAlign: "center", marginBottom: 8 } }, `insonor - estudio acústico en ${establishment}`)
+	);
+
+	// logo (más pequeño y sutil)
+	coverChildren.push(
+		React.createElement(View, { key: "logo-wrap", style: { alignItems: "center", marginTop: 8, marginBottom: 12 } },
+			React.createElement(PDFImage, { src: logoSource, style: { width: 120, height: "auto", opacity: 0.95 } })
 		)
 	);
-	coverChildren.push(React.createElement(Text, { style: styles.coverTitle }, data.title ?? "Informe acústico"));
-	coverChildren.push(React.createElement(Text, { style: styles.coverSub }, `Estudio: ISO 12354-4`));
-	coverChildren.push(React.createElement(Text, { style: styles.smallMeta }, `Fecha: ${new Date(data.generatedAt ?? new Date().toISOString()).toLocaleDateString()}`));
-	if (data.templates && data.templates.cover) coverChildren.push(React.createElement(Text, { style: { marginTop: 12 } }, HtmlUtils.stripHtml(data.templates.cover)));
-	// añadir footer al final de la portada
-	if (footer) coverChildren.push(footer);
+
+	// título central y norma debajo
+	coverChildren.push(React.createElement(Text, { key: "central-title", style: styles.coverTitle }, "Resultados del estudio acústico"));
+	coverChildren.push(React.createElement(Text, { key: "iso-line", style: styles.coverSub }, "ISO 12354-4"));
+
+	// bloque con datos del estudio
+	coverChildren.push(
+		React.createElement(View, { key: "study-block", style: { marginTop: 18, alignSelf: "flex-start" } },
+			React.createElement(View, { key: "row-est", style: { flexDirection: "row", marginBottom: 6 } },
+				React.createElement(Text, { style: styles.labelBold }, "Establecimiento: "),
+				React.createElement(Text, { style: styles.smallMeta }, String(establishment))
+			),
+			React.createElement(View, { key: "row-name", style: { flexDirection: "row", marginBottom: 6 } },
+				React.createElement(Text, { style: styles.labelBold }, "Nombre del estudio: "),
+				React.createElement(Text, { style: styles.smallMeta }, String(studyName))
+			),
+			React.createElement(View, { key: "row-date", style: { flexDirection: "row", marginBottom: 6 } },
+				React.createElement(Text, { style: styles.labelBold }, "Fecha del estudio: "),
+				React.createElement(Text, { style: styles.smallMeta }, String(studyDate))
+			)
+		)
+	);
+
+	// si existe plantilla adicional, mostrarla (limpiada)
+	if (data.templates && data.templates.cover) {
+		coverChildren.push(React.createElement(Text, { key: "tpl-cover", style: { marginTop: 12 } }, HtmlUtils.stripHtml(data.templates.cover)));
+	}
+
 	const coverPage = React.createElement(Page, { size: "A4", style: styles.page, key: "cover" }, ...coverChildren);
 
 	// --- Results page ---
@@ -141,14 +197,79 @@ export function createPdfDocumentElement(data: ExportedData = {}): React.ReactEl
 	resultsChildren.push(headerLeft, pageNumber);
 	if (watermark) resultsChildren.push(watermark);
 	resultsChildren.push(React.createElement(Text, { style: styles.sectionTitle }, "Resultados generales"));
-	// Results page: use importantValue for key metrics
-	if (data.summary && (data.summary.LpA_db !== undefined)) {
-		resultsChildren.push(React.createElement(Text, { style: styles.importantValue }, `LpA: ${data.summary.LpA_db} dB`));
+
+	// Intentar obtener LpA:
+	let lpA_value: number | null = null;
+	if (data.summary && typeof data.summary.LpA_db === "number") {
+		lpA_value = Number(data.summary.LpA_db);
+	} else if (data.perBand_Lp_exterior_dB && data.perBand_Lp_exterior_dB.length) {
+		const lpArray = mapEntriesToDb(data.perBand_Lp_exterior_dB, "Lp_dB");
+		lpA_value = energyAverageFromDbValues(lpArray);
 	}
-	if (data.diagnostic && data.diagnostic.Lw_emission_db !== undefined) {
-		resultsChildren.push(React.createElement(Text, { style: styles.importantValue }, `Lw (emisión): ${data.diagnostic.Lw_emission_db} dB`));
+
+	// Intentar obtener Lw:
+	let lw_value: number | null = null;
+	if (data.diagnostic && typeof data.diagnostic.Lw_emission_db === "number") {
+		lw_value = Number(data.diagnostic.Lw_emission_db);
+	} else if (data.perBand_Lw_dB && data.perBand_Lw_dB.length) {
+		const lwArray = mapEntriesToDb(data.perBand_Lw_dB, "Lw_dB");
+		lw_value = energyAverageFromDbValues(lwArray);
 	}
-	if (data.templates && data.templates.results) resultsChildren.push(React.createElement(Text, { style: styles.smallMeta }, HtmlUtils.stripHtml(data.templates.results)));
+
+	// Mostrar valores destacados
+	if (lpA_value !== null && !isNaN(lpA_value)) {
+		resultsChildren.push(React.createElement(Text, { style: styles.importantValue }, `LpA (nivel ponderado A): ${lpA_value} dB`));
+	} else {
+		resultsChildren.push(React.createElement(Text, { style: styles.smallMeta }, `LpA: datos no disponibles`));
+	}
+
+	if (lw_value !== null && !isNaN(lw_value)) {
+		resultsChildren.push(React.createElement(Text, { style: styles.importantValue }, `Lw (nivel de potencia sonora): ${lw_value} dB`));
+	} else {
+		resultsChildren.push(React.createElement(Text, { style: styles.smallMeta }, `Lw: datos no disponibles`));
+	}
+
+	// Añadir una breve explicación de qué es cada magnitud
+	resultsChildren.push(
+		React.createElement(Text, { style: { marginTop: 8 } },
+			"Explicación: LpA (nivel de presión sonora ponderado A) es el nivel de presión sonora ajustado para la sensibilidad del oído humano; se expresa en dB(A). Lw (nivel de potencia sonora) es la potencia acústica emitida por una fuente y se expresa en dB (referido a 10⁻¹² W)."
+		)
+	);
+
+	// Si hay datos por banda, mostrar tabla Lp y Lw con encabezado explicativo
+	if (data.perBand_Lp_exterior_dB && data.perBand_Lp_exterior_dB.length) {
+		resultsChildren.push(React.createElement(Text, { style: styles.sectionTitle, key: "lp-band-title" }, "Detalle Lp por banda (exterior)"));
+		// tabla simple
+		resultsChildren.push(React.createElement(View, { style: styles.tableHeader, key: "lp-hdr" },
+			React.createElement(Text, { style: { width: 120, ...styles.labelBold } }, "Frecuencia (Hz)"),
+			React.createElement(Text, { style: { width: 120, textAlign: "right", ...styles.labelBold } }, "Lp (dB)")
+		));
+		(data.perBand_Lp_exterior_dB as any[]).forEach((e, i) => {
+			const freq = e.freq_Hz ?? e.freq ?? "-";
+			const val = typeof e.Lp_dB === "number" ? `${e.Lp_dB}` : (typeof e.value === "number" ? `${e.value}` : "-");
+			resultsChildren.push(React.createElement(View, { style: styles.tableRow, key: `lp-row-${i}` },
+				React.createElement(Text, { style: styles.tableCell }, `${freq}`),
+				React.createElement(Text, { style: { ...styles.tableCell, textAlign: "right" } }, val)
+			));
+		});
+	}
+
+	if (data.perBand_Lw_dB && data.perBand_Lw_dB.length) {
+		resultsChildren.push(React.createElement(Text, { style: styles.sectionTitle, key: "lw-band-title" }, "Detalle Lw por banda"));
+		resultsChildren.push(React.createElement(View, { style: styles.tableHeader, key: "lw-hdr" },
+			React.createElement(Text, { style: { width: 120, ...styles.labelBold } }, "Frecuencia (Hz)"),
+			React.createElement(Text, { style: { width: 120, textAlign: "right", ...styles.labelBold } }, "Lw (dB)")
+		));
+		(data.perBand_Lw_dB as any[]).forEach((e, i) => {
+			const freq = e.freq_Hz ?? e.freq ?? "-";
+			const val = typeof e.Lw_dB === "number" ? `${e.Lw_dB}` : (typeof e.value === "number" ? `${e.value}` : "-");
+			resultsChildren.push(React.createElement(View, { style: styles.tableRow, key: `lw-row-${i}` },
+				React.createElement(Text, { style: styles.tableCell }, `${freq}`),
+				React.createElement(Text, { style: { ...styles.tableCell, textAlign: "right" } }, val)
+			));
+		});
+	}
+
 	// añadir footer
 	if (footer) resultsChildren.push(footer);
 	const resultsPage = React.createElement(Page, { size: "A4", style: styles.page, key: "results" }, ...resultsChildren);
